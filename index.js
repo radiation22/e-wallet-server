@@ -15,7 +15,7 @@ const io = new Server(httpServer, {
 });
 
 const uri =
-  "mongodb+srv://radiationcorporation2:DD6OVn277Mm9KvLj@cluster0.no7secj.mongodb.net/?retryWrites=true&w=majority&appName=AtlasApp";
+  "mongodb+srv://radiationcorporation2:mxibTWSOxEOOlZJV@cluster0.mzognxn.mongodb.net/?retryWrites=true&w=majority&appName=AtlasApp";
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
@@ -27,12 +27,6 @@ const client = new MongoClient(uri, {
 app.use(cors());
 app.use(express.json());
 
-// io.on("connection", (socket) => {
-//   socket.on("message", (data) => {
-//     console.log(data);
-//   });
-// });
-
 async function run() {
   try {
     const ticketCollection = client.db("TicketBooking").collection("Ticket");
@@ -41,6 +35,11 @@ async function run() {
     const userCollection = client.db("TicketBooking").collection("users");
     const adminCollection = client.db("TicketBooking").collection("admin");
     const messageCollection = client.db("TicketBooking").collection("message");
+    const claimCollection = client.db("TicketBooking").collection("claims");
+    const agentCollection = client.db("TicketBooking").collection("agents");
+    const walletCollection = client
+      .db("TicketBooking")
+      .collection("walletUsers");
     io.on("connection", (socket) => {
       // Listen for incoming messages from a client
       socket.on("message", async (data) => {
@@ -63,27 +62,6 @@ async function run() {
         console.log("A user disconnected");
       });
     });
-
-    // io.on("connection", (socket) => {
-    //   socket.on("message", async (data) => {
-    //     try {
-    //       // Save the message to MongoDB
-    //       await messageCollection.insertOne({
-    //         text: data.text,
-    //         sender: data.sender,
-    //       });
-
-    //       // Broadcast the message to all connected clients
-    //       io.emit("message", { text: data.text, sender: data.sender });
-    //     } catch (error) {
-    //       console.error(error);
-    //     }
-    //   });
-
-    //   socket.on("disconnect", () => {
-    //     console.log("A user disconnected");
-    //   });
-    // });
 
     // get method for finding the specific ticket for the user
     app.get("/message", async (req, res) => {
@@ -114,6 +92,22 @@ async function run() {
       const review = req.body;
       console.log(review);
       const result = await ticketCollection.insertOne(review);
+
+      res.send(result);
+    });
+
+    app.get("/claims", async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const cursor = claimCollection.find(query);
+      const ticket = await cursor.toArray();
+      res.send(ticket);
+    });
+
+    app.post("/addClaim", async (req, res) => {
+      const claims = req.body;
+
+      const result = await claimCollection.insertOne(claims);
 
       res.send(result);
     });
@@ -158,6 +152,23 @@ async function run() {
       }
     });
 
+    app.get("/validateAgentRole", async (req, res) => {
+      const userEmail = req.query.email;
+
+      try {
+        // Find the user by email in your MongoDB user collection
+        const user = await agentCollection.findOne({ email: userEmail });
+
+        if (user) {
+          res.json({ userRole: user.userRole });
+        } else {
+          res.status(404).json({ message: "User not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
     // find ticket email query
     app.get("/myTicket", async (req, res) => {
       const email = req.query.email;
@@ -189,6 +200,11 @@ async function run() {
       const product = await userCollection.find(query).toArray();
       res.send(product);
     });
+    app.get("/agents", async (req, res) => {
+      const query = {};
+      const product = await agentCollection.find(query).toArray();
+      res.send(product);
+    });
     // get method for users with email
     app.get("/singleDrivers", async (req, res) => {
       const email = req.query.email;
@@ -210,9 +226,40 @@ async function run() {
       const result = await userCollection.insertOne(user);
       res.send(result);
     });
+    // post method for agents
+    app.post("/agents", async (req, res) => {
+      const user = req.body;
+      const result = await agentCollection.insertOne(user);
+      res.send(result);
+    });
+    // post for wallet users method
+    app.post("/addUsers", async (req, res) => {
+      const user = req.body;
+      const result = await walletCollection.insertOne(user);
+      res.send(result);
+    });
     app.post("/admin", async (req, res) => {
       const user = req.body;
       const result = await adminCollection.insertOne(user);
+      res.send(result);
+    });
+
+    app.put("/claim/:id", async (req, res) => {
+      const id = req.params.id;
+      const updateUser = req.body;
+
+      const filter = { _id: new ObjectId(id) };
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: {
+          status: updateUser.status,
+        },
+      };
+      const result = await claimCollection.updateOne(
+        filter,
+        updateDoc,
+        options
+      );
       res.send(result);
     });
 
@@ -267,13 +314,264 @@ async function run() {
       const product = await managerCollection.find(query).toArray();
       res.send(product);
     });
+
+    // wallet section
+
+    app.get("/walletUsers", async (req, res) => {
+      const query = {};
+      const product = await walletCollection.find(query).toArray();
+      res.send(product);
+    });
+
+    app.put("/addSeen/:id", async (req, res) => {
+      const id = req.params.id;
+      const updateUser = req.body;
+
+      const filter = { _id: new ObjectId(id) };
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: {
+          status: updateUser.status,
+        },
+      };
+      const result = await messageCollection.updateOne(
+        filter,
+        updateDoc,
+        options
+      );
+      res.send(result);
+    });
+
+    app.put("/addBalance", async (req, res) => {
+      const { phoneNumber, balance } = req.body;
+      console.log(phoneNumber);
+
+      try {
+        // Find the user with the provided email
+        const userCursor = walletCollection.find({ phoneNumber: phoneNumber });
+
+        // Convert the cursor to an array of documents
+        const users = await userCursor.toArray();
+
+        if (users.length === 0) {
+          return res
+            .status(404)
+            .json({ success: false, message: "User not found" });
+        }
+
+        // Assume that there is only one user with the given email
+        const user = users[0];
+
+        // Calculate the new balance by adding the new balance to the existing balance
+        const newBalance = parseInt(user.balance) + parseInt(balance);
+
+        // Update the user's balance
+        await walletCollection.updateOne(
+          { phoneNumber: phoneNumber },
+          { $set: { balance: newBalance } }
+        );
+
+        res
+          .status(200)
+          .json({ success: true, message: "Balance updated successfully" });
+      } catch (error) {
+        console.error("Error:", error);
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
+    });
+
+    app.put("/driverBalance", async (req, res) => {
+      const { email, balance } = req.body;
+
+      try {
+        // Find the user with the provided email
+        const userCursor = userCollection.find({ email: email });
+
+        // Convert the cursor to an array of documents
+        const users = await userCursor.toArray();
+
+        if (users.length === 0) {
+          return res
+            .status(404)
+            .json({ success: false, message: "User not found" });
+        }
+
+        // Assume that there is only one user with the given email
+        const user = users[0];
+
+        // Calculate the new balance by adding the new balance to the existing balance
+        const newBalance = parseInt(user.balance) + parseInt(balance);
+
+        // Update the user's balance
+        await userCollection.updateOne(
+          { email: email },
+          { $set: { balance: newBalance } }
+        );
+
+        res
+          .status(200)
+          .json({ success: true, message: "Balance updated successfully" });
+      } catch (error) {
+        console.error("Error:", error);
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
+    });
+
+    app.put("/agentBalance", async (req, res) => {
+      const { email, balance } = req.body;
+
+      try {
+        // Find the user with the provided email
+        const userCursor = agentCollection.find({ email: email });
+
+        // Convert the cursor to an array of documents
+        const users = await userCursor.toArray();
+
+        if (users.length === 0) {
+          return res
+            .status(404)
+            .json({ success: false, message: "User not found" });
+        }
+
+        // Assume that there is only one user with the given email
+        const user = users[0];
+
+        // Calculate the new balance by adding the new balance to the existing balance
+        const newBalance = parseInt(user.balance) + parseInt(balance);
+
+        // Update the user's balance
+        await agentCollection.updateOne(
+          { email: email },
+          { $set: { balance: newBalance } }
+        );
+
+        res
+          .status(200)
+          .json({ success: true, message: "Balance updated successfully" });
+      } catch (error) {
+        console.error("Error:", error);
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
+    });
+    app.put("/decreaseAgent", async (req, res) => {
+      const { email, balance } = req.body;
+
+      console.log(email, balance);
+
+      try {
+        // Find the user with the provided email
+        const userCursor = agentCollection.find({ email: email });
+
+        // Convert the cursor to an array of documents
+        const users = await userCursor.toArray();
+
+        if (users.length === 0) {
+          return res
+            .status(404)
+            .json({ success: false, message: "User not found" });
+        }
+
+        // Assume that there is only one user with the given email
+        const user = users[0];
+
+        // Calculate the new balance by adding the new balance to the existing balance
+        const newBalance = parseInt(user.balance) - parseInt(balance);
+        console.log(newBalance);
+
+        // Update the user's balance
+        await agentCollection.updateOne(
+          { email: email },
+          { $set: { balance: newBalance } }
+        );
+
+        res
+          .status(200)
+          .json({ success: true, message: "Balance updated successfully" });
+      } catch (error) {
+        console.error("Error:", error);
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
+    });
+
+    app.put("/decreaseDriver", async (req, res) => {
+      const { email, balance } = req.body;
+
+      console.log(email, balance);
+
+      try {
+        // Find the user with the provided email
+        const userCursor = userCollection.find({ email: email });
+
+        // Convert the cursor to an array of documents
+        const users = await userCursor.toArray();
+
+        if (users.length === 0) {
+          return res
+            .status(404)
+            .json({ success: false, message: "User not found" });
+        }
+
+        // Assume that there is only one user with the given email
+        const user = users[0];
+
+        // Calculate the new balance by adding the new balance to the existing balance
+        const newBalance = parseInt(user.balance) - parseInt(balance);
+        console.log(newBalance);
+
+        // Update the user's balance
+        await userCollection.updateOne(
+          { email: email },
+          { $set: { balance: newBalance } }
+        );
+
+        res
+          .status(200)
+          .json({ success: true, message: "Balance updated successfully" });
+      } catch (error) {
+        console.error("Error:", error);
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
+    });
+
+    app.get("/myBalance", async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const cursor = walletCollection.find(query);
+      const ticket = await cursor.toArray();
+      res.send(ticket);
+    });
+
+    app.get("/agentBalance", async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const cursor = agentCollection.find(query);
+      const ticket = await cursor.toArray();
+      res.send(ticket);
+    });
+    app.get("/driverBalance", async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const cursor = userCollection.find(query);
+      const ticket = await cursor.toArray();
+      res.send(ticket);
+    });
   } finally {
   }
 }
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-  res.send("Nirapode is running");
+  res.send("Nirapode E-wallet is running");
 });
 
 httpServer.listen(PORT, () => {
